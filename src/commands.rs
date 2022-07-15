@@ -28,7 +28,7 @@ use std::sync::Arc;
 use std::time::Instant;
 use std::{fs, io};
 
-use clap::{ArgGroup, CommandFactory, Subcommand};
+use clap::{ArgGroup, CommandFactory, FromArgMatches, Subcommand};
 use config::Value;
 use criterion::Criterion;
 use git2::{Oid, Repository};
@@ -1031,8 +1031,6 @@ fn update_working_copy(
 struct Args {
     #[clap(flatten)]
     global_args: GlobalArgs,
-    #[clap(subcommand)]
-    command: Commands,
 }
 
 #[derive(clap::Args, Clone, Debug)]
@@ -1089,7 +1087,7 @@ struct GlobalArgs {
     color: Option<ColorChoice>,
 }
 
-#[derive(Subcommand, Clone, Debug)]
+#[derive(clap::Parser, Clone, Debug)]
 enum Commands {
     Init(InitArgs),
     Checkout(CheckoutArgs),
@@ -5442,15 +5440,17 @@ where
         }
     }
 
-    let app = Args::command();
+    let app = Commands::augment_subcommands(Args::command());
     let string_args = resolve_aliases(&app, ui.settings(), &string_args)?;
-    let args: Args = clap::Parser::parse_from(&string_args);
+    let matches = app.clone().get_matches_from(&string_args);
+    let args = Args::from_arg_matches(&matches).unwrap();
     if let Some(choice) = args.global_args.color {
         // Here we assume ui was created for_terminal().
         ui.reset_color_for_terminal(choice);
     }
-    let command_helper = CommandHelper::new(app, string_args, args.global_args.clone());
-    match &args.command {
+    let command_helper = CommandHelper::new(app, string_args, args.global_args);
+    let derived_subcommands = Commands::from_arg_matches(&matches).unwrap();
+    match &derived_subcommands {
         Commands::Init(sub_args) => cmd_init(ui, &command_helper, sub_args),
         Commands::Checkout(sub_args) => cmd_checkout(ui, &command_helper, sub_args),
         Commands::Untrack(sub_args) => cmd_untrack(ui, &command_helper, sub_args),
