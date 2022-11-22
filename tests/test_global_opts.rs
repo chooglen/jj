@@ -193,6 +193,29 @@ color="always""#,
 }
 
 #[test]
+fn test_colorized_help() {
+    // Test that help output parses global flags
+    let test_env = TestEnvironment::default();
+
+    // The default is no color.
+    let stdout = test_env.jj_cmd_success(test_env.env_root(), &["help"]);
+    insta::assert_snapshot!(stdout.lines().next().unwrap(), @"Jujutsu (An experimental VCS)");
+
+    // Check that output is colorized.
+    let stdout = test_env.jj_cmd_success(test_env.env_root(), &["--color=always", "help"]);
+    insta::assert_snapshot!(stdout.lines().next().unwrap(), @"[0mJujutsu (An experimental VCS)");
+}
+
+#[test]
+fn test_no_pager() {
+    // Test that --no-pager gets parsed correctly
+    let test_env = TestEnvironment::default();
+    // no_pager uses Option<bool> to work around a bug in clap's
+    // ignore_errors(). Check that this doesn't crash.
+    test_env.jj_cmd_success(test_env.env_root(), &["--no-pager", "help"]);
+}
+
+#[test]
 fn test_invalid_config() {
     // Test that we get a reasonable error if the config is invalid (#55)
     let test_env = TestEnvironment::default();
@@ -252,10 +275,10 @@ fn test_help() {
       -R, --repository <REPOSITORY>      Path to repository to operate on
           --no-commit-working-copy       Don't commit the working copy
           --at-operation <AT_OPERATION>  Operation to load the repo at [default: @] [aliases: at-op]
+      -v, --verbose                      Enable verbose logging
           --color <WHEN>                 When to colorize output (always, never, auto)
           --no-pager                     Disable the pager
           --config-toml <TOML>           Additional configuration options
-      -v, --verbose                      Enable verbose logging
     "###);
 }
 

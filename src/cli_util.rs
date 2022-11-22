@@ -24,7 +24,7 @@ use std::sync::Arc;
 
 use clap;
 use clap::builder::{NonEmptyStringValueParser, TypedValueParser, ValueParserFactory};
-use clap::{Arg, ArgMatches, Command, Error, FromArgMatches};
+use clap::{Arg, ArgAction, ArgMatches, Command, Error, FromArgMatches};
 use git2::{Oid, Repository};
 use itertools::Itertools;
 use jujutsu_lib::backend::{BackendError, CommitId, TreeId};
@@ -1229,6 +1229,16 @@ pub struct GlobalArgs {
         default_value = "@"
     )]
     pub at_operation: String,
+    /// Enable verbose logging
+    #[arg(long, short = 'v', global = true, help_heading = "Global Options")]
+    pub verbose: bool,
+
+    #[command(flatten)]
+    pub early_args: EarlyArgs,
+}
+
+#[derive(clap::Args, Clone, Debug)]
+pub struct EarlyArgs {
     /// When to colorize output (always, never, auto)
     #[arg(
         long,
@@ -1242,9 +1252,10 @@ pub struct GlobalArgs {
         long,
         value_name = "WHEN",
         global = true,
-        help_heading = "Global Options"
+        help_heading = "Global Options",
+        action = ArgAction::SetTrue
     )]
-    pub no_pager: bool,
+    pub no_pager: Option<bool>,
     /// Additional configuration options
     //  TODO: Introduce a `--config` option with simpler syntax for simple
     //  cases, designed so that `--config ui.color=auto` works
@@ -1255,9 +1266,6 @@ pub struct GlobalArgs {
         help_heading = "Global Options"
     )]
     pub config_toml: Vec<String>,
-    /// Enable verbose logging
-    #[arg(long, short = 'v', global = true, help_heading = "Global Options")]
-    pub verbose: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -1396,6 +1404,21 @@ fn resolve_aliases(
     }
 }
 
+/// Parse args that must be interpreted early, e.g. before printing help.
+fn handle_early_args(ui: &mut Ui, args: &mut EarlyArgs) -> Result<(), CommandError> {
+    if let Some(choice) = args.color {
+        args.config_toml
+            .push(format!("ui.color=\"{}\"", choice.to_string()));
+    }
+    if args.no_pager.unwrap_or_default() {
+        ui.set_pagination(crate::ui::PaginationChoice::No);
+    }
+    if !args.config_toml.is_empty() {
+        ui.extra_toml_settings(&args.config_toml)?;
+    }
+    Ok(())
+}
+
 pub fn parse_args(
     ui: &mut Ui,
     app: clap::Command,
@@ -1409,22 +1432,15 @@ pub fn parse_args(
             return Err(CommandError::CliError("Non-utf8 argument".to_string()));
         }
     }
+    // ignore_errors() bypasses errors like "--help" or missing subcommand
+    let early_matches = app.clone().ignore_errors(true).get_matches();
+    let mut toplevel_args: EarlyArgs = EarlyArgs::from_arg_matches(&early_matches).unwrap();
+    handle_early_args(ui, &mut toplevel_args)?;
 
     let string_args = resolve_aliases(ui.settings(), &app, &string_args)?;
     let matches = app.clone().try_get_matches_from(&string_args)?;
 
-    let mut args: Args = Args::from_arg_matches(&matches).unwrap();
-    if let Some(choice) = args.global_args.color {
-        args.global_args
-            .config_toml
-            .push(format!("ui.color=\"{}\"", choice.to_string()));
-    }
-    if args.global_args.no_pager {
-        ui.set_pagination(crate::ui::PaginationChoice::No);
-    }
-    if !args.global_args.config_toml.is_empty() {
-        ui.extra_toml_settings(&args.global_args.config_toml)?;
-    }
+    let args: Args = Args::from_arg_matches(&matches).unwrap();
     let command_helper = CommandHelper::new(app, string_args, args.global_args);
     Ok((command_helper, matches))
 }
