@@ -47,4 +47,12 @@ impl SubmoduleStore for DefaultSubmoduleStore {
     fn name(&self) -> &str {
         DefaultSubmoduleStore::name()
     }
+
+    fn get_submodule_path(&self, submodule: &str) -> PathBuf {
+        PathBuf::new()
+            .join(self.path.clone())
+            // TODO use more comprehensive sanitzation, e.g. url encoding the
+            // name.
+            .join(submodule.to_string().replace("/", "__"))
+    }
 }
