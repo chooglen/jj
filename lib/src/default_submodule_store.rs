@@ -16,7 +16,9 @@
 
 use std::path::{Path, PathBuf};
 
-use crate::submodule_store::SubmoduleStore;
+use crate::settings::UserSettings;
+use crate::submodule_store::{Submodule, SubmoduleStore};
+use crate::workspace::{Workspace, WorkspaceInitError};
 
 #[derive(Debug)]
 pub struct DefaultSubmoduleStore {
@@ -51,8 +53,21 @@ impl SubmoduleStore for DefaultSubmoduleStore {
     fn get_submodule_path(&self, submodule: &str) -> PathBuf {
         PathBuf::new()
             .join(self.path.clone())
-            // TODO use more comprehensive sanitzation, e.g. url encoding the
-            // name.
-            .join(submodule.to_string().replace("/", "__"))
+            // This sanitizes away problematic "/" and such. It would be nice if
+            // it were human-readable too, but this is ok for now.
+            .join(hex::encode(submodule.to_string()))
+    }
+
+    fn load_submodule(
+        &self,
+        user_settings: &UserSettings,
+        submodule: &str,
+    ) -> Result<Option<Submodule>, WorkspaceInitError> {
+        let submodule_path = self.get_submodule_path(submodule);
+        let repo = Workspace::init_internal_git(user_settings, &submodule_path)?.1;
+        Ok(Some(Submodule {
+            repo,
+            name: submodule.to_string(),
+        }))
     }
 }

@@ -3527,7 +3527,7 @@ fn cmd_workspace_update_stale(
                 return Err(user_error("Concurrent working copy operation. Try again."));
             }
             let stats = locked_wc
-                .check_out(&desired_wc_commit.tree())
+                .check_out(&desired_wc_commit.tree(), &repo)
                 .map_err(|err| {
                     CommandError::InternalError(format!(
                         "Failed to check out commit {}: {}",
@@ -3582,11 +3582,12 @@ fn cmd_sparse_set(
         .iter()
         .map(|v| workspace_command.parse_file_path(v))
         .try_collect()?;
+    let repo = workspace_command.repo().clone();
     // Determine inputs of `edit` operation now, since `workspace_command` is
     // inaccessible while the working copy is locked.
     let edit_inputs = args.edit.then(|| {
         (
-            workspace_command.repo().clone(),
+            &repo,
             workspace_command.workspace_root().clone(),
         )
     });
@@ -3616,7 +3617,7 @@ fn cmd_sparse_set(
         )?;
         new_patterns.sort();
     }
-    let stats = locked_wc.set_sparse_patterns(new_patterns).map_err(|err| {
+    let stats = locked_wc.set_sparse_patterns(new_patterns, &repo).map_err(|err| {
         CommandError::InternalError(format!("Failed to update working copy paths: {err}"))
     })?;
     let operation_id = locked_wc.old_operation_id().clone();

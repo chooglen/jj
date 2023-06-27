@@ -46,10 +46,13 @@ use crate::matchers::{
     DifferenceMatcher, EverythingMatcher, IntersectionMatcher, Matcher, PrefixMatcher,
 };
 use crate::op_store::{OperationId, WorkspaceId};
+use crate::repo::ReadonlyRepo;
+use crate::submodule_store::{Submodule, SubmoduleStore};
 use crate::repo_path::{FsPathParseError, RepoPath, RepoPathComponent, RepoPathJoin};
 use crate::store::Store;
 use crate::tree::{Diff, Tree};
 use crate::tree_builder::TreeBuilder;
+use crate::workspace::WorkspaceInitError;
 
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum FileType {
@@ -955,7 +958,7 @@ impl TreeState {
         Ok(())
     }
 
-    pub fn check_out(&mut self, new_tree: &Tree) -> Result<CheckoutStats, CheckoutError> {
+    pub fn check_out(&mut self, new_tree: &Tree, repo: &Arc<ReadonlyRepo>) -> Result<CheckoutStats, CheckoutError> {
         let old_tree = self
             .store
             .get_tree(&RepoPath::root(), &self.tree_id)
@@ -965,7 +968,7 @@ impl TreeState {
                 },
                 other => CheckoutError::InternalBackendError(other),
             })?;
-        let stats = self.update(&old_tree, new_tree, self.sparse_matcher().as_ref(), Err)?;
+        let stats = self.update(&old_tree, new_tree, self.sparse_matcher().as_ref(), repo, Err)?;
         self.tree_id = new_tree.id().clone();
         Ok(stats)
     }
@@ -973,6 +976,7 @@ impl TreeState {
     pub fn set_sparse_patterns(
         &mut self,
         sparse_patterns: Vec<RepoPath>,
+        repo: &Arc<ReadonlyRepo>,
     ) -> Result<CheckoutStats, CheckoutError> {
         let tree = self
             .store
@@ -992,9 +996,10 @@ impl TreeState {
             &empty_tree,
             &tree,
             &added_matcher,
+            repo,
             suppress_file_exists_error, // Keep un-ignored file and mark it as modified
         )?;
-        let removed_stats = self.update(&tree, &empty_tree, &removed_matcher, Err)?;
+        let removed_stats = self.update(&tree, &empty_tree, &removed_matcher, repo, Err)?;
         self.sparse_patterns = sparse_patterns;
         assert_eq!(added_stats.updated_files, 0);
         assert_eq!(added_stats.removed_files, 0);
@@ -1007,11 +1012,25 @@ impl TreeState {
         })
     }
 
+    // fn get_tree_submodule(
+    //     tree: &Tree,
+    //     path: &RepoPath,
+    //     repo: &Arc<ReadonlyRepo>,
+    // ) -> Result<Option<Submodule>, WorkspaceInitError> {
+    //     // TODO turn this into a nicer wrapper that doesn't reparse
+    //     let gitmodules_path = RepoPath::from_internal_string(".gitmodules");
+    //     let gitmodules = match tree.path_value(&gitmodules_path) {
+    //         Some(TreeValue::File {id, .. }) => repo.store().read_file(&gitmodules_path, &id),
+    //         _ => Ok(None), // TODO return a good value
+    //     };
+    // }
+
     fn update(
         &mut self,
         old_tree: &Tree,
         new_tree: &Tree,
         matcher: &dyn Matcher,
+        repo: &Arc<ReadonlyRepo>,
         mut handle_error: impl FnMut(CheckoutError) -> Result<(), CheckoutError>,
     ) -> Result<CheckoutStats, CheckoutError> {
         let mut stats = CheckoutStats {
@@ -1310,6 +1329,7 @@ impl WorkingCopy {
         operation_id: OperationId,
         old_tree_id: Option<&TreeId>,
         new_tree: &Tree,
+        repo: &Arc<ReadonlyRepo>,
     ) -> Result<CheckoutStats, CheckoutError> {
         let mut locked_wc = self.start_mutation();
         // Check if the current working-copy commit has changed on disk compared to what
@@ -1322,7 +1342,7 @@ impl WorkingCopy {
                 return Err(CheckoutError::ConcurrentCheckout);
             }
         }
-        let stats = locked_wc.check_out(new_tree)?;
+        let stats = locked_wc.check_out(new_tree, repo)?;
         locked_wc.finish(operation_id);
         Ok(stats)
     }
@@ -1373,10 +1393,10 @@ impl LockedWorkingCopy<'_> {
         Ok(tree_state.current_tree_id().clone())
     }
 
-    pub fn check_out(&mut self, new_tree: &Tree) -> Result<CheckoutStats, CheckoutError> {
+    pub fn check_out(&mut self, new_tree: &Tree, repo: &Arc<ReadonlyRepo>) -> Result<CheckoutStats, CheckoutError> {
         // TODO: Write a "pending_checkout" file with the new TreeId so we can
         // continue an interrupted update if we find such a file.
-        let stats = self.wc.tree_state_mut().check_out(new_tree)?;
+        let stats = self.wc.tree_state_mut().check_out(new_tree, repo)?;
         self.tree_state_dirty = true;
         Ok(stats)
     }
@@ -1393,14 +1413,14 @@ impl LockedWorkingCopy<'_> {
 
     pub fn set_sparse_patterns(
         &mut self,
-        new_sparse_patterns: Vec<RepoPath>,
+        new_sparse_patterns: Vec<RepoPath>, repo: &Arc<ReadonlyRepo>
     ) -> Result<CheckoutStats, CheckoutError> {
         // TODO: Write a "pending_checkout" file with new sparse patterns so we can
         // continue an interrupted update if we find such a file.
         let stats = self
             .wc
             .tree_state_mut()
-            .set_sparse_patterns(new_sparse_patterns)?;
+            .set_sparse_patterns(new_sparse_patterns, repo)?;
         self.tree_state_dirty = true;
         Ok(stats)
     }

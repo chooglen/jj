@@ -16,6 +16,17 @@
 
 use std::fmt::Debug;
 use std::path::PathBuf;
+use std::sync::Arc;
+
+use crate::repo::{Repo};
+use crate::settings::UserSettings;
+use crate::workspace::{WorkspaceInitError};
+
+pub struct Submodule {
+    // TODO make non-pub
+    pub repo: Arc<dyn Repo>,
+    pub name: String,
+}
 
 pub trait SubmoduleStore: Send + Sync + Debug {
     fn name(&self) -> &str;
@@ -27,4 +38,9 @@ pub trait SubmoduleStore: Send + Sync + Debug {
     // Given the name of a submodule, return the path that it should be cloned
     // to (for consumption by the `jj git clone` machinery).
     fn get_submodule_path(&self, submodule: &str) -> PathBuf;
+    fn load_submodule(
+        &self,
+        user_settings: &UserSettings,
+        submodule: &str,
+    ) -> Result<Option<Submodule>, WorkspaceInitError>;
 }

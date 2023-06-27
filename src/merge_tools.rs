@@ -25,6 +25,7 @@ use jj_lib::backend::{TreeId, TreeValue};
 use jj_lib::conflicts::materialize_merge_result;
 use jj_lib::gitignore::GitIgnoreFile;
 use jj_lib::matchers::EverythingMatcher;
+use jj_lib::repo::ReadonlyRepo;
 use jj_lib::repo_path::RepoPath;
 use jj_lib::settings::{ConfigResultExt as _, UserSettings};
 use jj_lib::store::Store;
@@ -35,6 +36,8 @@ use thiserror::Error;
 
 use crate::config::CommandNameAndArgs;
 use crate::ui::Ui;
+use jj_lib::submodule_store::SubmoduleStore;
+use jj_lib::empty_submodule_store::EmptySubmoduleStore;
 
 #[derive(Debug, Error)]
 pub enum ExternalToolError {
@@ -122,12 +125,14 @@ fn check_out(
     state_dir: PathBuf,
     tree: &Tree,
     sparse_patterns: Vec<RepoPath>,
+    repo: &Arc<ReadonlyRepo>,
 ) -> Result<TreeState, DiffEditError> {
     std::fs::create_dir(&wc_dir).map_err(ExternalToolError::SetUpDirError)?;
     std::fs::create_dir(&state_dir).map_err(ExternalToolError::SetUpDirError)?;
     let mut tree_state = TreeState::init(store, wc_dir, state_dir);
-    tree_state.set_sparse_patterns(sparse_patterns)?;
-    tree_state.check_out(tree)?;
+
+    tree_state.set_sparse_patterns(sparse_patterns, repo)?;
+    tree_state.check_out(tree, repo)?;
     Ok(tree_state)
 }
 
@@ -298,6 +303,7 @@ pub fn edit_diff(
     instructions: &str,
     base_ignores: Arc<GitIgnoreFile>,
     settings: &UserSettings,
+    repo: &Arc<ReadonlyRepo>,
 ) -> Result<TreeId, DiffEditError> {
     let store = left_tree.store();
     let changed_files = left_tree
@@ -321,6 +327,7 @@ pub fn edit_diff(
         left_state_dir,
         left_tree,
         changed_files.clone(),
+        &repo,
     )?;
     set_readonly_recursively(&left_wc_dir).map_err(ExternalToolError::SetUpDirError)?;
     let mut right_tree_state = check_out(
@@ -329,6 +336,7 @@ pub fn edit_diff(
         right_state_dir,
         right_tree,
         changed_files,
+        &repo,
     )?;
     let instructions_path = right_wc_dir.join("JJ-INSTRUCTIONS");
     // In the unlikely event that the file already exists, then the user will simply

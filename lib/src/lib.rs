@@ -30,6 +30,7 @@ pub mod default_revset_engine;
 pub mod default_revset_graph_iterator;
 pub mod default_submodule_store;
 pub mod diff;
+pub mod empty_submodule_store;
 pub mod file_util;
 pub mod files;
 pub mod fsmonitor;

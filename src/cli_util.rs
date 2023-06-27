@@ -1332,6 +1332,7 @@ impl WorkspaceCommandTransaction<'_> {
             instructions,
             base_ignores,
             settings,
+            self.base_repo(),
         )?)
     }
 
@@ -1354,6 +1355,7 @@ impl WorkspaceCommandTransaction<'_> {
                 instructions,
                 base_ignores,
                 settings,
+                self.base_repo(),
             )?)
         } else if matcher.visit(&RepoPath::root()) == Visit::AllRecursively {
             // Optimization for a common case
@@ -1795,6 +1797,7 @@ pub fn update_working_copy(
                 repo.op_id().clone(),
                 old_tree_id.as_ref(),
                 &new_commit.tree(),
+                repo,
             )
             .map_err(|err| {
                 CommandError::InternalError(format!(
